@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     SUPABASE_URL: str = "https://your-project.supabase.co"
-    SUPABASE_KEY: str = "your-service-role-key"
+    SUPABASE_KEY: str = "your-supabase-key"
 
     GUNICORN_WORKERS: int = 4
     GUNICORN_MAX_REQUESTS: int = 1000

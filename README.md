@@ -49,7 +49,7 @@ REDIS_URL=redis://localhost:6379/0
 # ── Supabase ─────────────────────────────────────────────────
 # Dari Supabase Dashboard → Settings → API
 SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_KEY=your-supabase-key
 
 # ── Gunicorn ───────────────────────────────────────────────────
 GUNICORN_WORKERS=4
@@ -101,7 +101,7 @@ Swagger UI tersedia di: `http://localhost:8000/docs`
 | `DEBUG` | No | false | Debug mode |
 | `REDIS_URL` | Yes | redis://localhost:6379/0 | Redis connection URL |
 | `SUPABASE_URL` | Yes | - | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | - | Supabase service role key |
+| `SUPABASE_KEY` | Yes | - | Supabase publishable key |
 | `GUNICORN_WORKERS` | No | 4 | Jumlah Gunicorn workers |
 | `RATE_LIMIT_GENERAL` | No | 100 | Rate limit general endpoint (req/mnt) |
 | `RATE_LIMIT_ANALYTICS` | No | 20 | Rate limit analytics endpoint (req/mnt) |

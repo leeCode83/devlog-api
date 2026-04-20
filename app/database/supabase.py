@@ -1,17 +1,10 @@
-from supabase import create_client, SupabaseClient
+from supabase import create_client, Client
 
 from app.config import settings
 
 
-def get_supabase_client() -> SupabaseClient:
+def get_client() -> Client:
     return create_client(
         supabase_url=settings.SUPABASE_URL,
         supabase_key=settings.SUPABASE_KEY,
-    )
-
-
-def get_supabase_anon_client() -> SupabaseClient:
-    return create_client(
-        supabase_url=settings.SUPABASE_URL,
-        supabase_key=settings.SUPABASE_ANON_KEY,
     )

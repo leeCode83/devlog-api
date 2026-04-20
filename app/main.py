@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.lib.errors import register_error_handlers, configure_logging
+from app.modules.auth.router import router as auth_router
 
 
 @asynccontextmanager
@@ -19,7 +20,19 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.openapi_components = {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+            }
+        }
+    }
+
     register_error_handlers(app)
+
+    app.include_router(auth_router, prefix="/api/v1")
 
     return app
 

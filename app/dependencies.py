@@ -1,23 +1,20 @@
 from typing import Annotated
 
-from fastapi import Depends, Header
-from supabase import create_client, SupabaseClient
+from fastapi import Depends
+from fastapi.security import HTTPBearer
+from supabase import Client
 
-from app.config import settings
+from app.database.supabase import get_client
 
+Client = Annotated[Client, Depends(get_client)]
 
-def get_supabase_service_client() -> SupabaseClient:
-    return create_client(
-        supabase_url=settings.SUPABASE_URL,
-        supabase_key=settings.SUPABASE_KEY,
-    )
+security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user_token(authorization: str = Header(None)) -> str | None:
-    if authorization and authorization.startswith("Bearer "):
-        return authorization[7:]
+async def get_current_user_token(authorization: str = Depends(security)) -> str | None:
+    if authorization:
+        return authorization.credentials
     return None
 
 
-SupabaseServiceClient = Annotated[SupabaseClient, Depends(get_supabase_service_client)]
 CurrentUserToken = Annotated[str | None, Depends(get_current_user_token)]
