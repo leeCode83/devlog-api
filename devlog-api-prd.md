@@ -3,7 +3,7 @@
 
 | Field             | Detail                              |
 |-------------------|-------------------------------------|
-| Versi             | v4.1.0                              |
+| Versi             | v4.2.0                              |
 | Status            | Draft — For Review                  |
 | Author            | Ale (Backend Engineer)              |
 | Tanggal           | April 2026                          |
@@ -65,7 +65,7 @@ Developer sering kehilangan visibilitas atas pola kerja mereka sendiri. Pertanya
 
 ### 4.1 In Scope
 
-- User authentication via Supabase Auth (using Supabase client, not manual JWT verification)
+- User authentication via Supabase Auth — DevLog API handles sign up, sign in, sign out via Supabase Admin API
 - Use Supabase `auth.users` table for user identity (no separate user_profiles table)
 - CRUD untuk Project dan Log Entry dengan RLS policy
 - Statistics & Analytics endpoint (daily, weekly, per-project)
@@ -101,9 +101,23 @@ Developer sering kehilangan visibilitas atas pola kerja mereka sendiri. Pertanya
 
 ## 6. Functional Requirements
 
-### 6.1 Authentication (via Supabase Auth)
+### 6.1 Authentication (via Supabase Admin API)
 
-Autentikasi sepenuhnya dihandle oleh Supabase Auth. DevLog API menggunakan Supabase client untuk verify access token — tidak perlu manual JWT verification dengan python-jose.
+DevLog API menangani authentication secara penuh menggunakan Supabase Admin API. User dapat sign up, sign in, dan sign out melalui endpoint API. Tidak ada client-side Supabase Auth SDK yang digunakan.
+
+**Sign Up:**
+- User register dengan email + password
+- DevLog API call `supabase.auth.admin.create_user()` untuk buat user baru
+- User otomatis login dan dapat access token
+
+**Sign In:**
+- User login dengan email + password
+- DevLog API call `supabase.auth.sign_in_with_password()` untuk verify credentials
+- Return access token + refresh token jika sukses
+
+**Sign Out:**
+- Invalidate user session
+- Return success response
 
 User identity menggunakan tabel `auth.users` yang sudah ada di Supabase. Tidak perlu membuat tabel user tambahan.
 
@@ -147,7 +161,7 @@ Insert log dari webhook menggunakan PostgreSQL function dengan SECURITY DEFINER 
 | Concurrency | Target concurrent users | 200 tanpa error rate > 1% |
 | Scalability | Worker configuration | Gunicorn minimal 4 uvicorn workers |
 | Scalability | DB connection | Via Supabase client |
-| Security | Auth | Semua protected endpoint wajib verify via Supabase client |
+| Security | Auth | Sign up/sign in/sign out via Supabase Admin API |
 | Security | RLS | Semua query ke tabel wajib melalui RLS policy |
 | Security | Webhook | HMAC-SHA256 signature wajib diverifikasi |
 | Security | Webhook Insert | SECURITY DEFINER function (bukan service role key) |
@@ -169,7 +183,7 @@ Insert log dari webhook menggunakan PostgreSQL function dengan SECURITY DEFINER 
 | Database | PostgreSQL via Supabase Cloud | Managed, familiar dari Claimly, tidak perlu maintenance server |
 | ORM | Supabase Python Client (postgrest) | Async, langsung akses via RLS policy tanpa JWT verification manual |
 | Migrations | Supabase Migrations CLI | Standard untuk Supabase project |
-| Auth | Supabase Auth + SB API Client | Tidak perlu verify JWT manual, client otomatis handle |
+| Auth | Supabase Admin API | DevLog API handle sign up/sign in/sign out via Admin API |
 | Cache & Rate Limit | Redis 7 + redis-py async | Analytics caching dan rate limiting per user |
 | Testing | pytest + httpx + pytest-asyncio | Standar industri Python, httpx untuk async integration test |
 | Logging | structlog | Structured JSON logging, production-grade |
@@ -190,7 +204,7 @@ Gunicorn (4 uvicorn workers)
         │
         ▼
 FastAPI Application
-  ├── Auth Middleware (Supabase client verify)
+  ├── Auth Middleware (verify Bearer token)
   ├── Rate Limit Middleware (Redis)
   ├── Structured Logging Middleware (correlation ID)
   └── Routers
@@ -212,12 +226,12 @@ FastAPI Application
 
 ### 9.2 Perbedaan dengan Arsitektur Original
 
-| Komponen | Original (v3.0.0) | Updated (v4.1.0) |
+| Komponen | Original (v3.0.0) | Updated (v4.2.0) |
 |---|---|---|
 | User Identity | Tabel `user_profiles` sendiri | Gunakan `auth.users` Supabase |
-| JWT Verification | Manual via `python-jose` + JWKS endpoint | Otomatis via Supabase client |
-| Auth Flow | Verify token → create user_profiles | Verify token → dapat user ID langsung |
-| Database Schema | Self-managed PostgreSQL with connection pooling | Supabase managed dengan RLS |
+| Auth Flow | Client-side Supabase SDK | DevLog API handle sign up/sign in via Admin API |
+| Auth Endpoints | None (delegated) | Full auth: sign up, sign in, sign out |
+| JWT Verification | Manual via `python-jose` + JWKS endpoint | Via Supabase client token verification |
 | Webhook Insert | Service role key untuk bypass RLS | SECURITY DEFINER function |
 
 ### 9.3 Clean Architecture: Layering Pattern
@@ -245,7 +259,7 @@ devlog-api/
 │   │   ├── supabase.py         # Supabase client setup
 │   │   └── models/             # Pydantic schemas
 │   ├── modules/
-│   │   ├── auth/                # User context extraction from Supabase token
+│   │   ├── auth/                # sign up, sign in, sign out, /me
 │   │   ├── projects/            # router, service, repository, schemas
 │   │   ├── logs/                # router, service, repository, schemas
 │   │   ├── analytics/           # router, service (aggregation + cache)
@@ -406,8 +420,6 @@ PostgreSQL function dengan `SECURITY DEFINER` berjalan dengan privileges dari fu
 ```sql
 CREATE OR REPLACE FUNCTION insert_webhook_log(
     p_repo_full_name VARCHAR,
-    p_user_id UUID,
-    p_project_id UUID,
     p_commit_count INTEGER,
     p_started_at TIMESTAMPTZ
 ) RETURNS UUID
@@ -429,8 +441,7 @@ $$;
 2. **SET search_path = public** — Prevent function from using unexpected schemas.
 
 3. **Input validation** — Function must validate that:
-   - `p_user_id` actually owns the mapping for `p_repo_full_name`
-   - `p_project_id` belongs to that user
+   - `p_repo_full_name` exists in github_mappings
    - `p_commit_count` is reasonable (1-100 range)
 
 4. **No direct table access** — Function must use the same RLS-protected tables, but the definer role bypasses RLS only for this function.
@@ -496,6 +507,9 @@ Semua response mengikuti envelope format yang konsisten:
 
 | Method | Endpoint | Auth | Deskripsi |
 |---|---|---|---|
+| POST | /api/v1/auth/signup | Public | Register new user |
+| POST | /api/v1/auth/signin | Public | Login user |
+| POST | /api/v1/auth/signout | Required | Logout user |
 | GET | /api/v1/health | Public | Health check: status API |
 | GET | /api/v1/me | Required | Get current user info (from auth.users) |
 | PATCH | /api/v1/me | Required | Update user metadata (stored in auth.users) |
@@ -548,20 +562,31 @@ Semua list endpoint menggunakan cursor-based pagination, bukan offset. Cursor di
 
 ## 13. Business Process & User Flows
 
-### 13.1 Alur Autentikasi (Simple)
+### 13.1 Alur Autentikasi (Backend-Handled)
 
-1. Client login via Supabase Auth SDK (di luar DevLog API)
-2. Supabase menerbitkan access token (JWT, berlaku 1 jam)
-3. Client kirim request ke DevLog API dengan Bearer token
-4. DevLog API gunakan Supabase client untuk verify token
-5. Supabase client return user info (id, email, dll)
-6. DevLog API gunakan user id tersebut untuk query via RLS
+**Sign Up:**
+1. Client kirim POST /api/v1/auth/signup dengan email + password
+2. DevLog API call `supabase.auth.admin.create_user()` via Supabase Admin API
+3. User created in `auth.users`, session established
+4. Return access token + refresh token to client
 
-**Tidak perlu:**
-- Manual decode JWT dengan python-jose
-- Fetch JWKS endpoint
-- Cache JWKS keys
-- Create user_profiles sendiri
+**Sign In:**
+1. Client kirim POST /api/v1/auth/signin dengan email + password
+2. DevLog API call `supabase.auth.sign_in_with_password()` via Supabase client
+3. Credentials verified, session created
+4. Return access token + refresh token to client
+
+**Sign Out:**
+1. Client kirim POST /api/v1/auth/signout dengan Bearer token
+2. DevLog API call `supabase.auth.sign_out()` via Supabase client
+3. Session invalidated
+4. Return success to client
+
+**Token Verification:**
+1. Client kirim request dengan Bearer token
+2. DevLog API call `supabase.auth.get_user()` via Supabase client
+3. Token verified, user info returned
+4. User ID extracted and used for RLS policies
 
 ### 13.2 Alur Mencatat Aktivitas Harian
 
@@ -614,7 +639,7 @@ Call Supabase function: insert_webhook_log()
 | Hari | Focus Area | Deliverable & Key Learning |
 |---|---|---|
 | Hari 1 | Setup & Foundation | Project structure, Docker Compose, Supabase client setup, env config, structured logging, health check endpoint. LEARNING: Supabase client integration. |
-| Hari 2 | Auth Layer & RLS Setup | Supabase client auth verification, enable RLS on tables, write RLS policies, create tables via migration. LEARNING: RLS policy design. |
+| Hari 2 | Auth Module | Sign up, sign in, sign out endpoints via Supabase Admin API. LEARNING: Auth flow handling di backend. |
 | Hari 3 | Projects & Logs Module | Full CRUD dengan Repository Pattern dan Service Layer, Pydantic schemas, cursor-based pagination. LEARNING: Clean architecture layering yang strict. |
 | Hari 4 | Analytics Module + Caching | Aggregasi query via Supabase, Redis caching layer, cache invalidation, rate limiting middleware. LEARNING: Caching strategy dan async Redis. |
 | Hari 5 | GitHub Webhook + SECURITY DEFINER | HMAC verification, SECURITY DEFINER function, auto-log creation, github_mappings CRUD, Gunicorn config. LEARNING: PostgreSQL function + security pattern. |
@@ -625,9 +650,10 @@ Call Supabase function: insert_webhook_log()
 
 Sprint dianggap selesai jika:
 
-- Semua 20 endpoint berjalan tanpa error
+- Semua 22 endpoint berjalan tanpa error (3 auth + 19 CRUD/stats)
 - Docker Compose up dengan satu perintah
 - Gunicorn berjalan dengan minimal 4 uvicorn workers
+- Sign up/sign in/sign out berfungsi dengan Supabase Admin API
 - RLS policies aktif dan berfungsi untuk semua tabel
 - SECURITY DEFINER function bekerja untuk webhook
 - Test coverage >= 70%
@@ -646,6 +672,7 @@ Sprint dianggap selesai jika:
 | RLS policy mistake menyebabkan data leak | Rendah | Tinggi | Test setiap policy dengan user berbeda |
 | SECURITY DEFINER function vulnerability | Sedang | Tinggi | Buat input validation yang ketat, SET search_path, test dengan berbagai edge cases |
 | Connection pool Supabase tidak cukup | Rendah | Tinggi | Monitoring via dashboard, upgrade plan jika perlu |
+| Auth flow edge cases (email already exists, wrong password) | Sedang | Sedang | Handle error response dengan proper error codes |
 | Scope creep | Tinggi | Tinggi | Dokumen ini adalah kontrak. Fitur tambahan masuk backlog. |
 
 ---
@@ -656,7 +683,7 @@ Sprint dianggap selesai jika:
 |---|---|---|
 | User profile extra data (timezone, dll) disimpan dimana? | RESOLVED | Simpan di `auth.users.metadata` JSON field |
 | Rate limit: per endpoint atau global per user? | RESOLVED | Global per user: 100 req/mnt. Analytics: 20 req/mnt. |
-| Auth: manual JWT atau Supabase client? | RESOLVED | Supabase client (simple, tidak perlu JWKS caching) |
+| Auth: client-side SDK atau backend-handled? | RESOLVED | Backend handle sign up/sign in/sign out via Supabase Admin API |
 | Webhook insert: service role vs SECURITY DEFINER? | RESOLVED | SECURITY DEFINER function (lebih aman, tidak perlu service role key) |
 | Target concurrent users? | RESOLVED | 200 concurrent via Gunicorn multi-worker + Supabase connection pool |
 | Export data (CSV/JSON)? | BACKLOG | Out of scope sprint ini. |
@@ -668,6 +695,7 @@ Sprint dianggap selesai jika:
 
 - FastAPI Documentation — https://fastapi.tiangolo.com
 - Supabase Python Client — https://supabase.com/docs/reference/python/introduction
+- Supabase Admin API — https://supabase.com/docs/reference/javascript/admin
 - Supabase RLS Documentation — https://supabase.com/docs/guides/database/postgres/row-level-security
 - PostgreSQL SECURITY DEFINER — https://www.postgresql.org/docs/current/sql-createfunction.html
 - structlog Documentation — https://www.structlog.org
@@ -676,4 +704,4 @@ Sprint dianggap selesai jika:
 
 ---
 
-*End of Document — DevLog API PRD v4.1.0 — April 2026*
+*End of Document — DevLog API PRD v4.2.0 — April 2026*
