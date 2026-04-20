@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_URL=https://xxx.supabase.co
+      - SUPABASE_KEY=xxx
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: gunicorn -c gunicorn.conf.py app.main:app
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+networks:
+  default:
+    name: devlog-network

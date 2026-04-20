@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────
+# DevLog API — Python Dependencies
+# ─────────────────────────────────────────────────────────────
+
+# ── Core Framework ──────────────────────────────────────────
+fastapi                # Web framework (async, Swagger auto-generated)
+uvicorn[standard]      # ASGI server for FastAPI (includes httptools + uvloop)
+gunicorn                # Process manager for running multiple uvicorn workers
+
+# ── Supabase Client ─────────────────────────────────────────
+postgrest              # Supabase Python client for database access via RLS
+
+# ── Validation & Config ──────────────────────────────────────
+pydantic                # Runtime validation + type inference
+pydantic-settings       # Environment variable management for Pydantic
+
+# ── HTTP Client ─────────────────────────────────────────────
+httpx                   # HTTP client (used by Supabase client + testing)
+
+# ── Caching & Rate Limiting ──────────────────────────────────
+redis[asyncio]          # Redis async client (analytics cache + rate limiting)
+
+# ── Logging ──────────────────────────────────────────────────
+structlog                # Structured JSON logging (production-grade)
+
+# ── Testing ──────────────────────────────────────────────────
+pytest                   # Test framework
+pytest-asyncio           # Async test support for pytest
+
+# ── Utilities ───────────────────────────────────────────────
+python-multipart          # Form data parsing (for file uploads in APIs)
+itsdangerous             # Secure session data handling
